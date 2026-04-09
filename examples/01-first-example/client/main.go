@@ -33,14 +33,14 @@ func runLoop(zmqSocket *zmq.Socket) {
 		// Recv blocks until the server sends a reply.
 		// If the server is absent, never started, or crashed after receiving the message,
 		// this call blocks forever — there is no timeout and no way to unblock it.
-		msg, err := zmqSocket.Recv(0)
+		receiveMessage, err := zmqSocket.Recv(0)
 		if err != nil {
 			log.Printf("error: receive: %v\n", err)
 
 			break
 		}
 
-		log.Printf("received: %s\n", msg)
+		log.Printf("received: %s\n", receiveMessage)
 	}
 }
 

@@ -1,5 +1,5 @@
 // Weather update server
-// Binds PUB socket to tcp://*:5556
+// Binds PUB socket to tcp://*:5556 and ipc://weather.ipc
 // Publishes random weather updates
 package main
 
@@ -124,7 +124,7 @@ func main() {
 		}
 	}()
 
-	err = bindEndpoints(zmqSocket, "tcp://*:5555", "ipc://weather.ipc")
+	err = bindEndpoints(zmqSocket, "tcp://*:5556", "ipc://weather.ipc")
 	if err != nil {
 		log.Printf("error: %v\n", err)
 
