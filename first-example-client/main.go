@@ -67,6 +67,10 @@ func main() {
 		// Send returns immediately and queues the message in ZMQ's internal buffer.
 		// If the server is absent or has crashed, the message is held in the buffer
 		// and will be delivered once the server comes back — no error is returned.
+		//
+		// This looks like a memory leak (unbounded queuing) but is not: ZMQ caps
+		// the send buffer at ZMQ_SNDHWM messages (default 1000). Once the cap is
+		// reached, Send blocks until space is available. Memory growth is bounded.
 		n, err := zmqSocket.Send(sendMessage, 0)
 		if err != nil {
 			log.Printf("error: send: %v\n", err)

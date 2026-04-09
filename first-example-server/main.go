@@ -84,6 +84,10 @@ func main() {
 		// this call still succeeds — no error is returned and the reply is silently lost.
 		// The REQ/REP state machine then advances to waiting for the next request,
 		// but the client (if it reconnects) will be out of sync with the server state.
+		//
+		// This looks like a memory leak (reply queued for a gone client) but is not:
+		// ZMQ detects the TCP peer is gone and drops the message. The allocation is
+		// temporary. The send buffer is also capped at ZMQ_SNDHWM (default 1000).
 		n, err := zmqSocket.Send(sendMessage, 0)
 		if err != nil {
 			log.Printf("error: send: %v\n", err)
