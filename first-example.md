@@ -1,152 +1,137 @@
-# REQ/REP Socket Pattern — Behaviour Across Transport Types
-
-## REQ/REP State Machine
-
-REQ/REP enforces a strict alternating message exchange regardless of transport:
-
-- **REQ** must: `Send` → `Recv` → `Send` → `Recv` → ...
-- **REP** must: `Recv` → `Send` → `Recv` → `Send` → ...
-
-Calling `Send` twice in a row, or `Recv` before `Send` on a REQ socket, returns an `EFSM`
-error immediately. This is enforced in ZMQ's socket layer, not in the transport.
-
----
-
-## Transport Types
-
-### `tcp://`
-
-The standard transport for networked and local communication.
-
-**Connect/Bind:**
-- `Connect` returns immediately regardless of whether the server is running.
-  ZMQ establishes the TCP connection in the background (lazy connect).
-- `Bind` can happen before or after `Connect` on the other side.
-
-**Send:**
-- Returns immediately and enqueues the message in ZMQ's internal send buffer.
-- If the peer is not yet connected, the message is held in the buffer until
-  the connection is established and then delivered.
-- If the peer has disconnected, ZMQ detects the TCP FIN/RST and **drops** the
-  queued message silently. No error is returned to the caller.
-- ZMQ automatically attempts to reconnect using exponential backoff.
-
-**Recv:**
-- Blocks until a message arrives. There is no built-in timeout; if the peer
-  never sends (or has gone away), `Recv` blocks forever unless a socket option
-  such as `ZMQ_RCVTIMEO` is set.
-
----
-
-### `ipc://`
-
-Unix domain socket transport. Semantically identical to `tcp://` for `Send`/`Recv`.
-
-**Differences from `tcp://`:**
-- Same-machine only. Endpoint is a filesystem path: `ipc:///tmp/myapp.sock`.
-- Slightly lower latency (no IP/TCP stack overhead).
-- Disconnect detection and reconnect behavior are the same as `tcp://`.
-- Send/Recv blocking and buffering rules are identical.
-
----
-
-### `inproc://`
-
-In-process transport between threads sharing the same ZMQ context.
-
-**Connect/Bind:**
-- `Bind` **must** be called before `Connect`. Unlike `tcp://` and `ipc://`,
-  there is no lazy connect — if `Connect` is called before `Bind`, it fails.
-
-**Send:**
-- Transfers the message directly through shared memory. No kernel involvement,
-  no serialization, no copy through the network stack.
-- If the receiving thread has closed its socket, `Send` returns an error
-  (`ETERM` or `ENOTSUP`) immediately — there is no silent drop as with `tcp://`,
-  because ZMQ can detect the closed socket synchronously within the process.
-
-**Recv:**
-- Blocks until the sending thread calls `Send`. Same blocking rules as `tcp://`.
-- Because both sides are in the same process, a crashed thread typically brings
-  down the whole process, making disconnect scenarios largely moot.
-
-**Latency:**
-- Lowest possible — no OS involvement for message transfer.
-
----
-
-### `pgm://` and `epgm://`
-
-UDP multicast transports. **Not compatible with REQ/REP.**
-
-These transports only work with `PUB`/`SUB` because multicast is inherently
-one-to-many and connectionless — there is no concept of a peer to reply to.
-Using `pgm://` or `epgm://` with a REQ or REP socket returns a bind/connect error.
-
----
+# ZMQ REQ/REP Send/Receive Behaviour by Transport
 
 ## High-Water Mark (HWM)
 
-ZMQ uses two per-socket buffer limits to bound memory usage:
+ZMQ uses per-socket buffer limits to bound memory usage.
 
 | Option | Direction | Default |
 |---|---|---|
-| `ZMQ_SNDHWM` | outgoing messages | 1000 |
+| `ZMQ_SNDHWM` | outgoing messages (per peer queue) | 1000 |
 | `ZMQ_RCVHWM` | incoming messages | 1000 |
 
-These limits apply to the number of messages queued in ZMQ's internal buffers,
-not bytes. They are independent of transport type.
-
-**What happens when the send HWM is reached:**
-
-- With blocking `Send` (flag `0`): `Send` blocks until the peer consumes a
-  message and space becomes available. Memory does not grow beyond the limit.
-- With non-blocking `Send` (flag `DONTWAIT`): `Send` returns immediately with
-  an `EAGAIN` error. The message is discarded by the caller, not by ZMQ.
-
-**HWM in practice for REQ/REP:**
-
-Because REQ enforces a strict send→recv cycle, a REQ socket can have at most
-one message outstanding at any time. The send HWM of 1000 is therefore never
-reached in normal REQ/REP operation. It would only become relevant if the
-application holds many REQ sockets simultaneously, each waiting for a reply.
+Limits are counted in **number of messages**, not bytes. What happens when a
+limit is reached depends on the socket type and is described in each scenario below.
 
 ---
 
-## What Happens to a Sent Message When the Other Side Is Gone
+## Scenario 1: REQ — Send — TCP
 
-The outcome depends on **when** the peer disappears relative to the `Send` call.
+The REQ socket enforces a strict alternating state machine: `Send` → `Recv` → `Send` → ...
+Calling `Send` twice in a row returns `EFSM` immediately.
 
-### Peer gone before `Send` (never connected, or disconnected earlier)
+`Send` returns immediately and enqueues the message in ZMQ's internal send buffer.
+The actual TCP transmission happens in the background. `Connect` always returns
+successfully regardless of whether the server is running (lazy connect) — if the
+REP server is not yet connected, the message is held in the buffer and delivered
+once the connection is established.
 
-| Transport | Outcome |
-|---|---|
-| `tcp://` | Message is queued in the send buffer. ZMQ retries the connection. If the peer comes back before HWM is reached, the message is delivered. If HWM is reached first, `Send` blocks (blocking mode) or returns `EAGAIN` (non-blocking). |
-| `ipc://` | Same as `tcp://`. |
-| `inproc://` | `Send` returns an error immediately (`ETERM`). The message is never queued. |
+**If the REP server is gone before `Send`:** the message is queued in the send
+buffer. ZMQ retries the connection using exponential backoff. The message is
+delivered if the server comes back before HWM is reached.
 
-### Peer gone after `Send` but before it consumed the message
+**If the REP server goes away after `Send` but before processing the message:**
+ZMQ detects the TCP disconnect (FIN/RST) and silently drops the queued message.
+`Send` already returned successfully — no error is reported. The REQ socket
+remains stuck waiting in `Recv` (see Scenario 2).
 
-| Transport | Outcome |
-|---|---|
-| `tcp://` | ZMQ detects the TCP disconnect and **silently drops** the queued message. No error is returned to the caller — `Send` already returned successfully. |
-| `ipc://` | Same as `tcp://`. |
-| `inproc://` | Same process — peer socket closure is detected immediately. Subsequent `Send` calls return an error, but a message already in the buffer at the moment of closure may be dropped. |
+**If HWM (`ZMQ_SNDHWM`) is reached:** `Send` blocks until the peer consumes a
+message and buffer space becomes available. With the non-blocking flag
+(`DONTWAIT`), `Send` returns `EAGAIN` instead. In practice, REQ can have at
+most one message outstanding at a time due to strict alternation, so HWM is
+never reached from a single REQ socket.
 
-### REP-specific case: client gone during server work
+---
 
-The server calls `Recv` (succeeds), does work, then calls `Send` — but the
-client disconnected while the server was working. `Send` succeeds and returns
-no error. ZMQ queues the reply briefly and then drops it when it detects the
-TCP peer is gone. This is **not a memory leak**: the allocation is temporary
-and bounded by `ZMQ_SNDHWM`. The REP state machine advances normally to
-waiting for the next request.
+## Scenario 2: REQ — Recv — TCP
 
-### REQ-specific case: server gone after client `Send`
+`Recv` blocks until the REP server sends a reply. There is no built-in timeout.
 
-The client calls `Send` (succeeds, message buffered), then calls `Recv` — but
-the server never processes the request. `Recv` blocks forever. ZMQ will
-reconnect to the server when it comes back, but the buffered request is
-**not automatically retransmitted** after reconnect — it was already consumed
-from the REQ socket's buffer. The client remains stuck in `Recv` unless a
-`ZMQ_RCVTIMEO` timeout is configured.
+**If the REP server is gone:** `Recv` blocks forever. ZMQ reconnects in the
+background, but the original request is **not automatically retransmitted** after
+reconnect — it was consumed from the REQ buffer at `Send` time. The client
+remains blocked until `ZMQ_RCVTIMEO` is configured or the process is killed.
+
+**If HWM (`ZMQ_RCVHWM`) is reached:** ZMQ drops incoming messages for this
+socket. For REQ/REP this is uncommon — strict alternation means the REQ receive
+queue holds at most one message at a time.
+
+---
+
+## Scenario 3: REQ — Send — IPC
+
+Behaviour is **identical to Scenario 1** (REQ — Send — TCP) in all respects:
+lazy connect, buffering, silent drop on disconnect, HWM blocking.
+
+Differences from TCP:
+- Endpoint is a filesystem path (`ipc:///tmp/myapp.sock`) instead of host/port.
+- Same-machine only.
+- Lower latency — IP/TCP stack is bypassed (Unix domain socket).
+- Disconnect detection uses Unix socket events instead of TCP FIN/RST, but ZMQ
+  handles it identically: silent drop, then reconnect attempt.
+
+---
+
+## Scenario 4: REQ — Recv — IPC
+
+Behaviour is **identical to Scenario 2** (REQ — Recv — TCP): `Recv` blocks
+indefinitely if no reply arrives, with the same reconnect and HWM characteristics.
+
+The same-machine constraint and lower latency from Scenario 3 apply here as well.
+
+---
+
+## Scenario 5: REP — Recv — TCP
+
+The REP socket enforces the mirror state machine: `Recv` → `Send` → `Recv` → ...
+Calling `Recv` twice in a row returns `EFSM` immediately.
+
+`Recv` blocks until a REQ client sends a request. There is no built-in timeout.
+If multiple REQ clients are connected, REP processes them one at a time in
+fair-queued order — it will not accept a second request until it has replied to
+the first.
+
+**If no client is connected or all clients have gone away:** `Recv` blocks
+forever. ZMQ does not return an error when peers disconnect. Configure
+`ZMQ_RCVTIMEO` to bound the wait.
+
+**If HWM (`ZMQ_RCVHWM`) is reached:** ZMQ drops incoming messages from clients
+whose requests would exceed the limit. The sending REQ client receives no error —
+its message is silently discarded.
+
+---
+
+## Scenario 6: REP — Send — TCP
+
+`Send` is called after `Recv` to deliver the reply to the client that sent the
+corresponding request. `Send` returns immediately and enqueues the reply in
+ZMQ's internal send buffer.
+
+**If the REQ client disconnected while the server was processing the request:**
+`Send` still succeeds and returns no error. ZMQ queues the reply briefly, detects
+the TCP disconnect, and silently drops the message. This is **not a memory leak**:
+the allocation is temporary and bounded by `ZMQ_SNDHWM`. The REP state machine
+advances normally to waiting for the next request.
+
+**If HWM (`ZMQ_SNDHWM`) is reached:** `Send` blocks (blocking mode) or returns
+`EAGAIN` (non-blocking). In REP/REQ strict alternation, the reply queue holds at
+most one message per connected peer, so HWM is rarely reached.
+
+---
+
+## Scenario 7: REP — Recv — IPC
+
+Behaviour is **identical to Scenario 5** (REP — Recv — TCP): blocks until a
+client request arrives, same fair-queuing for multiple clients, same HWM drop
+semantics.
+
+The same-machine constraint and lower latency from Scenario 3 apply here as well.
+
+---
+
+## Scenario 8: REP — Send — IPC
+
+Behaviour is **identical to Scenario 6** (REP — Send — TCP): `Send` succeeds
+even if the client is gone, reply is silently dropped on disconnect, bounded by
+HWM.
+
+The same-machine constraint and lower latency from Scenario 3 apply here as well.
