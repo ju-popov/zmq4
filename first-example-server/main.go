@@ -11,6 +11,10 @@ func main() {
 	log.Println("first-example-server: start.")
 	defer log.Println("first-example-server: stop.")
 
+	zmqMajorVer, zmqMinorVer, zmqPatchVer := zmq.Version()
+
+	log.Printf("ZMQ version: %d.%d.%d\n", zmqMajorVer, zmqMinorVer, zmqPatchVer)
+
 	log.Println("create zmq context")
 
 	zmqCtx, err := zmq.NewContext()
@@ -73,7 +77,7 @@ func main() {
 
 		log.Println("simulate work")
 
-		time.Sleep(time.Second * 10)
+		time.Sleep(time.Second * 1)
 
 		sendMessage := "World"
 

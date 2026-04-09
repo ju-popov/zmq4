@@ -10,6 +10,10 @@ func main() {
 	log.Println("first-example-client: start.")
 	defer log.Println("first-example-client: stop.")
 
+	zmqMajorVer, zmqMinorVer, zmqPatchVer := zmq.Version()
+
+	log.Printf("ZMQ version: %d.%d.%d\n", zmqMajorVer, zmqMinorVer, zmqPatchVer)
+
 	log.Println("create zmq context")
 
 	zmqCtx, err := zmq.NewContext()
