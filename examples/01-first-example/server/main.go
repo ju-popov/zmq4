@@ -7,7 +7,50 @@ import (
 	zmq "github.com/pebbe/zmq4"
 )
 
-//nolint:funlen
+func runLoop(zmqSocket *zmq.Socket) {
+	for {
+		log.Println("receive")
+
+		// Recv blocks until a client sends a message.
+		// If no client is connected or all clients have crashed before sending,
+		// this call blocks forever — there is no timeout and no way to unblock it.
+		msg, err := zmqSocket.Recv(0)
+		if err != nil {
+			log.Printf("error: receive: %v\n", err)
+
+			break
+		}
+
+		log.Printf("received: %s\n", msg)
+
+		log.Println("simulate work")
+
+		time.Sleep(time.Second * 1)
+
+		sendMessage := "World"
+
+		log.Printf("send: %s\n", sendMessage)
+
+		// Send returns immediately and queues the reply in ZMQ's internal buffer.
+		// If the client disconnected or crashed during the work simulation above,
+		// this call still succeeds — no error is returned and the reply is silently lost.
+		// The REQ/REP state machine then advances to waiting for the next request,
+		// but the client (if it reconnects) will be out of sync with the server state.
+		//
+		// This looks like a memory leak (reply queued for a gone client) but is not:
+		// ZMQ detects the TCP peer is gone and drops the message. The allocation is
+		// temporary. The send buffer is also capped at ZMQ_SNDHWM (default 1000).
+		bytes, err := zmqSocket.Send(sendMessage, 0)
+		if err != nil {
+			log.Printf("error: send: %v\n", err)
+
+			break
+		}
+
+		log.Printf("sent bytes: %d\n", bytes)
+	}
+}
+
 func main() {
 	log.Println("first-example-server: start.")
 	defer log.Println("first-example-server: stop.")
@@ -61,47 +104,7 @@ func main() {
 
 	log.Println("start server loop")
 
-	for {
-		log.Println("receive")
-
-		// Recv blocks until a client sends a message.
-		// If no client is connected or all clients have crashed before sending,
-		// this call blocks forever — there is no timeout and no way to unblock it.
-		msg, err := zmqSocket.Recv(0)
-		if err != nil {
-			log.Printf("error: receive: %v\n", err)
-
-			break
-		}
-
-		log.Printf("received: %s\n", msg)
-
-		log.Println("simulate work")
-
-		time.Sleep(time.Second * 1)
-
-		sendMessage := "World"
-
-		log.Printf("send: %s\n", sendMessage)
-
-		// Send returns immediately and queues the reply in ZMQ's internal buffer.
-		// If the client disconnected or crashed during the work simulation above,
-		// this call still succeeds — no error is returned and the reply is silently lost.
-		// The REQ/REP state machine then advances to waiting for the next request,
-		// but the client (if it reconnects) will be out of sync with the server state.
-		//
-		// This looks like a memory leak (reply queued for a gone client) but is not:
-		// ZMQ detects the TCP peer is gone and drops the message. The allocation is
-		// temporary. The send buffer is also capped at ZMQ_SNDHWM (default 1000).
-		bytes, err := zmqSocket.Send(sendMessage, 0)
-		if err != nil {
-			log.Printf("error: send: %v\n", err)
-
-			break
-		}
-
-		log.Printf("sent bytes: %d\n", bytes)
-	}
+	runLoop(zmqSocket)
 
 	log.Println("stop server loop")
 }

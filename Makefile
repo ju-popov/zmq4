@@ -33,3 +33,4 @@ test:
 build:
 	CGO_ENABLED=1 go build -trimpath -o ./bin/01-first-example-server ./examples/01-first-example/server/main.go
 	CGO_ENABLED=1 go build -trimpath -o ./bin/01-first-example-client ./examples/01-first-example/client/main.go
+	CGO_ENABLED=1 go build -trimpath -o ./bin/02-weather-update-server ./examples/02-weather-update/server/main.go
