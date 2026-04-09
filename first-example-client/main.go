@@ -23,8 +23,6 @@ func main() {
 		err = zmqCtx.Term()
 		if err != nil {
 			log.Printf("error: terminate zmq context: %v\n", err)
-
-			return
 		}
 	}()
 
