@@ -69,3 +69,6 @@ out/
 
 # Claude
 .claude/
+
+# Executable files
+bin/

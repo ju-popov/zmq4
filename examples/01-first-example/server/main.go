@@ -7,6 +7,7 @@ import (
 	zmq "github.com/pebbe/zmq4"
 )
 
+//nolint:funlen
 func main() {
 	log.Println("first-example-server: start.")
 	defer log.Println("first-example-server: stop.")
@@ -92,14 +93,14 @@ func main() {
 		// This looks like a memory leak (reply queued for a gone client) but is not:
 		// ZMQ detects the TCP peer is gone and drops the message. The allocation is
 		// temporary. The send buffer is also capped at ZMQ_SNDHWM (default 1000).
-		n, err := zmqSocket.Send(sendMessage, 0)
+		bytes, err := zmqSocket.Send(sendMessage, 0)
 		if err != nil {
 			log.Printf("error: send: %v\n", err)
 
 			break
 		}
 
-		log.Printf("sent bytes: %d\n", n)
+		log.Printf("sent bytes: %d\n", bytes)
 	}
 
 	log.Println("stop server loop")

@@ -1,0 +1,36 @@
+version: "2"
+linters:
+  default: all
+  disable:
+    - wsl    # [deprecated]: Add or remove empty lines. [fast, auto-fix]
+    - revive # Fast, configurable, extensible, flexible, and beautiful linter for Go. Drop-in replacement of golint. [auto-fix]
+  settings:
+    depguard: # Go linter that checks if package imports are in a list of acceptable packages. [fast]
+      rules:
+        main:
+          allow:
+            - $gostd
+            - github.com/pebbe/zmq4
+formatters:
+  enable:
+    - gci # Checks if code and import statements are formatted, with additional rules.
+    - gofmt # Checks if the code is formatted according to 'gofmt' command.
+    - gofumpt # Checks if code and import statements are formatted, with additional rules.
+    - goimports # Checks if the code and import statements are formatted according to the 'goimports' command.
+    - golines # Checks if code is formatted, and fixes long lines.
+  settings:
+    gci: # Checks if code and import statements are formatted, with additional rules.
+      sections:
+        - standard
+        - default
+        - prefix(github.com/ju-popov)
+        - prefix(github.com/ju-popov/zmq4)
+        - blank
+        - dot
+        - localmodule
+    golines:
+      max-len: 120
+run:
+  timeout: 5m
+  allow-serial-runners: true
+  go: '1.26'

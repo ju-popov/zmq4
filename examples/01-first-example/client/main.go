@@ -6,6 +6,7 @@ import (
 	zmq "github.com/pebbe/zmq4"
 )
 
+//nolint:funlen
 func main() {
 	log.Println("first-example-client: start.")
 	defer log.Println("first-example-client: stop.")
@@ -62,8 +63,7 @@ func main() {
 
 	log.Println("start client loop")
 
-	for index := 0; index < 10; index++ {
-
+	for index := range 10 {
 		sendMessage := "Hello"
 
 		log.Printf("send(%d): %s\n", index, sendMessage)
@@ -75,14 +75,14 @@ func main() {
 		// This looks like a memory leak (unbounded queuing) but is not: ZMQ caps
 		// the send buffer at ZMQ_SNDHWM messages (default 1000). Once the cap is
 		// reached, Send blocks until space is available. Memory growth is bounded.
-		n, err := zmqSocket.Send(sendMessage, 0)
+		bytes, err := zmqSocket.Send(sendMessage, 0)
 		if err != nil {
 			log.Printf("error: send: %v\n", err)
 
 			break
 		}
 
-		log.Printf("sent bytes: %d\n", n)
+		log.Printf("sent bytes: %d\n", bytes)
 
 		log.Println("receive")
 
