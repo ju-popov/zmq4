@@ -12,13 +12,13 @@ func runLoop(zmqSocket *zmq.Socket) {
 
 		log.Printf("send(%d): %s\n", index, sendMessage)
 
-		// Send returns immediately and queues the message in ZMQ's internal buffer.
-		// If the server is absent or has crashed, the message is held in the buffer
-		// and will be delivered once the server comes back — no error is returned.
-		//
-		// This looks like a memory leak (unbounded queuing) but is not: ZMQ caps
-		// the send buffer at ZMQ_SNDHWM messages (default 1000). Once the cap is
-		// reached, Send blocks until space is available. Memory growth is bounded.
+		// Send is non-blocking: it enqueues the message in ZMQ's internal
+		// send buffer and returns immediately. If the server is absent the
+		// message is held in the buffer until the connection is established.
+		// If the buffer is full (ZMQ_SNDHWM, default 1000 messages), Send
+		// blocks until space is available (flag 0). With DONTWAIT it would
+		// return EAGAIN instead. REQ enforces strict send→recv alternation:
+		// calling Send twice in a row returns EFSM.
 		bytes, err := zmqSocket.Send(sendMessage, 0)
 		if err != nil {
 			log.Printf("error: send: %v\n", err)
@@ -30,9 +30,12 @@ func runLoop(zmqSocket *zmq.Socket) {
 
 		log.Println("receive")
 
-		// Recv blocks until the server sends a reply.
-		// If the server is absent, never started, or crashed after receiving the message,
-		// this call blocks forever — there is no timeout and no way to unblock it.
+		// Recv blocks until the server sends a reply. If the server is absent,
+		// crashed, or never processes the request, this call blocks forever —
+		// there is no built-in timeout unless ZMQ_RCVTIMEO is set.
+		// If the receive buffer is full (ZMQ_RCVHWM, default 1000 messages),
+		// ZMQ drops incoming messages silently — in REQ/REP this is unlikely
+		// since at most one reply is in flight at a time.
 		receiveMessage, err := zmqSocket.Recv(0)
 		if err != nil {
 			log.Printf("error: receive: %v\n", err)
@@ -88,9 +91,10 @@ func main() {
 
 	log.Printf("connect to server: %s\n", endpoint)
 
-	// Connect always succeeds immediately regardless of whether the server is running.
-	// ZMQ uses lazy connection: the actual TCP handshake happens in the background.
-	// If the server is absent, ZMQ will keep retrying silently until it appears.
+	// Connect is non-blocking: it returns immediately regardless of whether
+	// the server is running. ZMQ establishes the TCP connection in the
+	// background (lazy connect). If the server is absent, ZMQ keeps retrying
+	// silently — outgoing messages are buffered until the connection is ready.
 	err = zmqSocket.Connect(endpoint)
 	if err != nil {
 		log.Printf("error: connect to server: %v\n", err)

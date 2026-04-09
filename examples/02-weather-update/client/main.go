@@ -19,9 +19,6 @@ const (
 	messageFieldsCount int    = 3
 )
 
-// parseZipcode reads the zipcode from os.Args or uses the default.
-// It validates the value by parsing it as an integer and reformatting,
-// which breaks the taint chain from user input for log injection purposes.
 func parseZipcode() (string, error) {
 	raw := defaultZipcode
 
@@ -40,6 +37,9 @@ func parseZipcode() (string, error) {
 func configureSocket(zmqSocket *zmq.Socket, zipcode string) error {
 	log.Printf("set subscribe (zipcode): %s\n", zipcode)
 
+	// SetSubscribe is non-blocking: it registers a prefix filter on the socket.
+	// Only messages whose content starts with this prefix will be delivered to
+	// Recv. Filtering happens inside ZMQ before messages reach the application.
 	err := zmqSocket.SetSubscribe(zipcode)
 	if err != nil {
 		return fmt.Errorf("set subscribe: %w", err)
@@ -47,6 +47,11 @@ func configureSocket(zmqSocket *zmq.Socket, zipcode string) error {
 
 	log.Println("connect to server")
 
+	// Connect is non-blocking: it returns immediately regardless of whether the
+	// server is running. ZMQ establishes the TCP connection in the background
+	// (lazy connect). Messages matching the subscription filter are delivered
+	// once the connection is established — messages published before the
+	// connection is ready are lost, as PUB/SUB has no replay mechanism.
 	err = zmqSocket.Connect("tcp://localhost:5556")
 	if err != nil {
 		return fmt.Errorf("connect to server: %w", err)
@@ -64,6 +69,12 @@ func runLoop(zmqSocket *zmq.Socket) (int64, int64) {
 	for range temperaturesCount {
 		log.Println("receive")
 
+		// Recv blocks until a message matching the subscription filter arrives.
+		// If the server is absent or not yet publishing, this call blocks
+		// forever — there is no built-in timeout unless ZMQ_RCVTIMEO is set.
+		// If the incoming buffer is full (ZMQ_RCVHWM, default 1000 messages),
+		// ZMQ signals the publisher to drop messages for this subscriber —
+		// no error is returned, but messages are silently lost.
 		receiveMessage, err := zmqSocket.Recv(0)
 		if err != nil {
 			log.Printf("error: receive: %v\n", err)

@@ -33,6 +33,8 @@ func bindEndpoints(zmqSocket *zmq.Socket, endpoints ...string) error {
 	for _, endpoint := range endpoints {
 		log.Printf("bind zmq socket: %s\n", endpoint)
 
+		// Bind is non-blocking: it registers the endpoint immediately and
+		// returns. Subscribers may connect at any time after this call.
 		err := zmqSocket.Bind(endpoint)
 		if err != nil {
 			return fmt.Errorf("bind socket %s: %w", endpoint, err)
@@ -73,6 +75,12 @@ func runLoop(zmqSocket *zmq.Socket) {
 
 		log.Printf("send: %s\n", sendMessage)
 
+		// Send is non-blocking on a PUB socket: it enqueues the message into
+		// each subscriber's outgoing buffer and returns immediately.
+		// Unlike REQ/REP, PUB never blocks — if a subscriber's buffer is full
+		// (ZMQ_SNDHWM, default 1000 messages), the message is silently dropped
+		// for that subscriber only. Other subscribers are unaffected.
+		// If no subscribers are connected, the message is dropped immediately.
 		bytes, err := zmqSocket.Send(sendMessage, 0)
 		if err != nil {
 			log.Printf("error: send: %v\n", err)

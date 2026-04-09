@@ -11,9 +11,14 @@ func runLoop(zmqSocket *zmq.Socket) {
 	for {
 		log.Println("receive")
 
-		// Recv blocks until a client sends a message.
-		// If no client is connected or all clients have crashed before sending,
-		// this call blocks forever — there is no timeout and no way to unblock it.
+		// Recv blocks until a client sends a request. If no client is connected
+		// or all clients have gone away, this call blocks forever — there is no
+		// built-in timeout unless ZMQ_RCVTIMEO is set.
+		// If the receive buffer is full (ZMQ_RCVHWM, default 1000 messages),
+		// ZMQ drops incoming messages silently — in REQ/REP this is unlikely
+		// since REP processes one request at a time.
+		// REP enforces strict recv→send alternation: calling Recv twice in a
+		// row returns EFSM.
 		msg, err := zmqSocket.Recv(0)
 		if err != nil {
 			log.Printf("error: receive: %v\n", err)
@@ -31,15 +36,13 @@ func runLoop(zmqSocket *zmq.Socket) {
 
 		log.Printf("send: %s\n", sendMessage)
 
-		// Send returns immediately and queues the reply in ZMQ's internal buffer.
-		// If the client disconnected or crashed during the work simulation above,
-		// this call still succeeds — no error is returned and the reply is silently lost.
-		// The REQ/REP state machine then advances to waiting for the next request,
-		// but the client (if it reconnects) will be out of sync with the server state.
-		//
-		// This looks like a memory leak (reply queued for a gone client) but is not:
-		// ZMQ detects the TCP peer is gone and drops the message. The allocation is
-		// temporary. The send buffer is also capped at ZMQ_SNDHWM (default 1000).
+		// Send is non-blocking: it enqueues the reply in ZMQ's internal send
+		// buffer and returns immediately. If the client disconnected during the
+		// work simulation above, Send still succeeds — ZMQ detects the gone
+		// peer and silently drops the message. No error is returned.
+		// If the buffer is full (ZMQ_SNDHWM, default 1000 messages), Send
+		// blocks until space is available (flag 0). In REQ/REP this is unlikely
+		// since at most one reply per client is in flight at a time.
 		bytes, err := zmqSocket.Send(sendMessage, 0)
 		if err != nil {
 			log.Printf("error: send: %v\n", err)
@@ -95,6 +98,8 @@ func main() {
 
 	log.Printf("bind zmq socket: %s\n", endpoint)
 
+	// Bind is non-blocking: it registers the endpoint immediately and returns.
+	// Clients may connect at any time after this call.
 	err = zmqSocket.Bind(endpoint)
 	if err != nil {
 		log.Printf("error: bind socket: %v\n", err)
