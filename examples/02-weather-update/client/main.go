@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -17,6 +18,11 @@ const (
 	temperaturesCount  int64  = 100
 	defaultZipcode     string = "59937"
 	messageFieldsCount int    = 3
+)
+
+var (
+	errMalformedMessage     = errors.New("malformed message")
+	errMalformedTemperature = errors.New("malformed temperature")
 )
 
 func parseZipcode() (string, error) {
@@ -60,7 +66,10 @@ func configureSocket(zmqSocket *zmq.Socket, zipcode string) error {
 	return nil
 }
 
-func runLoop(zmqSocket *zmq.Socket) (int64, int64) {
+func runLoop(zmqSocket *zmq.Socket) (int64, int64, error) {
+	log.Println("start client loop")
+	defer log.Println("stop client loop")
+
 	var (
 		totalTemperature int64
 		samplesReceived  int64
@@ -77,9 +86,7 @@ func runLoop(zmqSocket *zmq.Socket) (int64, int64) {
 		// no error is returned, but messages are silently lost.
 		receiveMessage, err := zmqSocket.Recv(0)
 		if err != nil {
-			log.Printf("error: receive: %v\n", err)
-
-			break
+			return 0, 0, fmt.Errorf("receive: %w", err)
 		}
 
 		log.Printf("received: %s\n", receiveMessage)
@@ -87,23 +94,19 @@ func runLoop(zmqSocket *zmq.Socket) (int64, int64) {
 		readMessageDetails := strings.Split(receiveMessage, " ")
 
 		if len(readMessageDetails) < messageFieldsCount {
-			log.Printf("error: malformed message: %q\n", receiveMessage)
-
-			break
+			return 0, 0, fmt.Errorf("%w: %q", errMalformedMessage, receiveMessage)
 		}
 
 		temperature, err := strconv.ParseInt(readMessageDetails[1], 10, 64)
 		if err != nil {
-			log.Printf("error: parse temperature: %v\n", err)
-
-			break
+			return 0, 0, fmt.Errorf("%w: %q", errMalformedTemperature, readMessageDetails[1])
 		}
 
 		totalTemperature += temperature
 		samplesReceived++
 	}
 
-	return totalTemperature, samplesReceived
+	return totalTemperature, samplesReceived, nil
 }
 
 func logAverage(zipcode string, total, count int64) {
@@ -114,28 +117,17 @@ func logAverage(zipcode string, total, count int64) {
 	}
 }
 
-func main() {
-	log.Println("weather-update-client: start.")
-	defer log.Println("weather-update-client: stop.")
-
-	zmqMajorVer, zmqMinorVer, zmqPatchVer := zmq.Version()
-
-	log.Printf("ZMQ version: %d.%d.%d\n", zmqMajorVer, zmqMinorVer, zmqPatchVer)
-
+func mainWithError() error {
 	zipcode, err := parseZipcode()
 	if err != nil {
-		log.Printf("error: %v\n", err)
-
-		return
+		return fmt.Errorf("parse zipcode: %w", err)
 	}
 
 	log.Println("create zmq context")
 
 	zmqCtx, err := zmq.NewContext()
 	if err != nil {
-		log.Printf("error: create zmq context: %v\n", err)
-
-		return
+		return fmt.Errorf("create zmq context: %w", err)
 	}
 
 	defer func() {
@@ -149,9 +141,7 @@ func main() {
 
 	zmqSocket, err := zmqCtx.NewSocket(zmq.SUB)
 	if err != nil {
-		log.Printf("error: create zmq socket: %v\n", err)
-
-		return
+		return fmt.Errorf("create zmq socket: %w", err)
 	}
 
 	defer func() {
@@ -163,16 +153,29 @@ func main() {
 
 	err = configureSocket(zmqSocket, zipcode)
 	if err != nil {
-		log.Printf("error: %v\n", err)
-
-		return
+		return fmt.Errorf("configure socket: %w", err)
 	}
 
-	log.Println("start client loop")
-
-	totalTemperature, samplesReceived := runLoop(zmqSocket)
-
-	log.Println("stop client loop")
+	totalTemperature, samplesReceived, err := runLoop(zmqSocket)
+	if err != nil {
+		return fmt.Errorf("run loop: %w", err)
+	}
 
 	logAverage(zipcode, totalTemperature, samplesReceived)
+
+	return nil
+}
+
+func main() {
+	log.Println("weather-update-client: start.")
+	defer log.Println("weather-update-client: stop.")
+
+	zmqMajorVer, zmqMinorVer, zmqPatchVer := zmq.Version()
+
+	log.Printf("ZMQ version: %d.%d.%d\n", zmqMajorVer, zmqMinorVer, zmqPatchVer)
+
+	err := mainWithError()
+	if err != nil {
+		log.Printf("error: %v\n", err)
+	}
 }

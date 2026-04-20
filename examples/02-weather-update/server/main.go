@@ -44,29 +44,26 @@ func bindEndpoints(zmqSocket *zmq.Socket, endpoints ...string) error {
 	return nil
 }
 
-func runLoop(zmqSocket *zmq.Socket) {
+func runLoop(zmqSocket *zmq.Socket) error {
+	log.Println("start server loop")
+	defer log.Println("stop server loop")
+
 	for {
 		zipcode, err := randInt64(maxZipcode)
 		if err != nil {
-			log.Printf("error: generate zipcode: %v\n", err)
-
-			break
+			return fmt.Errorf("generate zip code: %w", err)
 		}
 
 		temperature, err := randInt64(temperatureRange)
 		if err != nil {
-			log.Printf("error: generate temperature: %v\n", err)
-
-			break
+			return fmt.Errorf("generate temperature: %w", err)
 		}
 
 		temperature += temperatureMin
 
 		humidity, err := randInt64(humidityRange)
 		if err != nil {
-			log.Printf("error: generate humidity: %v\n", err)
-
-			break
+			return fmt.Errorf("generate humidity: %w", err)
 		}
 
 		humidity += humidityMin
@@ -83,30 +80,19 @@ func runLoop(zmqSocket *zmq.Socket) {
 		// If no subscribers are connected, the message is dropped immediately.
 		bytes, err := zmqSocket.Send(sendMessage, 0)
 		if err != nil {
-			log.Printf("error: send: %v\n", err)
-
-			break
+			return fmt.Errorf("send: %w", err)
 		}
 
 		log.Printf("sent bytes: %d\n", bytes)
 	}
 }
 
-func main() {
-	log.Println("weather-update-server: start.")
-	defer log.Println("weather-update-server: stop.")
-
-	zmqMajorVer, zmqMinorVer, zmqPatchVer := zmq.Version()
-
-	log.Printf("ZMQ version: %d.%d.%d\n", zmqMajorVer, zmqMinorVer, zmqPatchVer)
-
+func mainWithError() error {
 	log.Println("create zmq context")
 
 	zmqCtx, err := zmq.NewContext()
 	if err != nil {
-		log.Printf("error: create zmq context: %v\n", err)
-
-		return
+		return fmt.Errorf("create zmq context: %w", err)
 	}
 
 	defer func() {
@@ -120,9 +106,7 @@ func main() {
 
 	zmqSocket, err := zmqCtx.NewSocket(zmq.PUB)
 	if err != nil {
-		log.Printf("error: create zmq socket: %v\n", err)
-
-		return
+		return fmt.Errorf("create zmq socket: %w", err)
 	}
 
 	defer func() {
@@ -134,14 +118,27 @@ func main() {
 
 	err = bindEndpoints(zmqSocket, "tcp://*:5556", "ipc://weather.ipc")
 	if err != nil {
-		log.Printf("error: %v\n", err)
-
-		return
+		return fmt.Errorf("bind endpoints: %w", err)
 	}
 
-	log.Println("start server loop")
+	err = runLoop(zmqSocket)
+	if err != nil {
+		return fmt.Errorf("run loop: %w", err)
+	}
 
-	runLoop(zmqSocket)
+	return nil
+}
 
-	log.Println("stop server loop")
+func main() {
+	log.Println("weather-update-server: start.")
+	defer log.Println("weather-update-server: stop.")
+
+	zmqMajorVer, zmqMinorVer, zmqPatchVer := zmq.Version()
+
+	log.Printf("ZMQ version: %d.%d.%d\n", zmqMajorVer, zmqMinorVer, zmqPatchVer)
+
+	err := mainWithError()
+	if err != nil {
+		log.Printf("error: %v\n", err)
+	}
 }

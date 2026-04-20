@@ -1,12 +1,16 @@
 package main
 
 import (
+	"fmt"
 	"log"
 
 	zmq "github.com/pebbe/zmq4"
 )
 
-func runLoop(zmqSocket *zmq.Socket) {
+func runLoop(zmqSocket *zmq.Socket) error {
+	log.Println("start client loop")
+	defer log.Println("stop client loop")
+
 	for index := range 10 {
 		sendMessage := "Hello"
 
@@ -21,9 +25,7 @@ func runLoop(zmqSocket *zmq.Socket) {
 		// calling Send twice in a row returns EFSM.
 		bytes, err := zmqSocket.Send(sendMessage, 0)
 		if err != nil {
-			log.Printf("error: send: %v\n", err)
-
-			break
+			return fmt.Errorf("send: %w", err)
 		}
 
 		log.Printf("sent bytes: %d\n", bytes)
@@ -38,30 +40,21 @@ func runLoop(zmqSocket *zmq.Socket) {
 		// since at most one reply is in flight at a time.
 		receiveMessage, err := zmqSocket.Recv(0)
 		if err != nil {
-			log.Printf("error: receive: %v\n", err)
-
-			break
+			return fmt.Errorf("receive: %w", err)
 		}
 
 		log.Printf("received: %s\n", receiveMessage)
 	}
+
+	return nil
 }
 
-func main() {
-	log.Println("first-example-client: start.")
-	defer log.Println("first-example-client: stop.")
-
-	zmqMajorVer, zmqMinorVer, zmqPatchVer := zmq.Version()
-
-	log.Printf("ZMQ version: %d.%d.%d\n", zmqMajorVer, zmqMinorVer, zmqPatchVer)
-
+func mainWithError() error {
 	log.Println("create zmq context")
 
 	zmqCtx, err := zmq.NewContext()
 	if err != nil {
-		log.Printf("error: create zmq context: %v\n", err)
-
-		return
+		return fmt.Errorf("create zmq context: %w", err)
 	}
 
 	defer func() {
@@ -75,9 +68,7 @@ func main() {
 
 	zmqSocket, err := zmqCtx.NewSocket(zmq.REQ)
 	if err != nil {
-		log.Printf("error: create zmq socket: %v\n", err)
-
-		return
+		return fmt.Errorf("create zmq socket: %w", err)
 	}
 
 	defer func() {
@@ -97,14 +88,27 @@ func main() {
 	// silently — outgoing messages are buffered until the connection is ready.
 	err = zmqSocket.Connect(endpoint)
 	if err != nil {
-		log.Printf("error: connect to server: %v\n", err)
-
-		return
+		return fmt.Errorf("connect to server: %w", err)
 	}
 
-	log.Println("start client loop")
+	err = runLoop(zmqSocket)
+	if err != nil {
+		return fmt.Errorf("run loop: %w", err)
+	}
 
-	runLoop(zmqSocket)
+	return nil
+}
 
-	log.Println("stop client loop")
+func main() {
+	log.Println("first-example-client: start.")
+	defer log.Println("first-example-client: stop.")
+
+	zmqMajorVer, zmqMinorVer, zmqPatchVer := zmq.Version()
+
+	log.Printf("ZMQ version: %d.%d.%d\n", zmqMajorVer, zmqMinorVer, zmqPatchVer)
+
+	err := mainWithError()
+	if err != nil {
+		log.Printf("error: %v\n", err)
+	}
 }
