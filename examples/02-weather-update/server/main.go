@@ -33,8 +33,8 @@ func bindEndpoints(zmqSocket *zmq.Socket, endpoints ...string) error {
 	for _, endpoint := range endpoints {
 		log.Printf("bind zmq socket: %s\n", endpoint)
 
-		// Bind is non-blocking: it registers the endpoint immediately and
-		// returns. Subscribers may connect at any time after this call.
+		// Bind is non-blocking: it registers the endpoint immediately and returns.
+		// Subscribers may connect at any time after this call.
 		err := zmqSocket.Bind(endpoint)
 		if err != nil {
 			return fmt.Errorf("bind socket %s: %w", endpoint, err)

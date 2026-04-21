@@ -72,3 +72,6 @@ out/
 
 # Executable files
 bin/
+
+# Temporary files
+weather.ipc

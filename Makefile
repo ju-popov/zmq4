@@ -31,7 +31,10 @@ test:
 
 .PHONY: build
 build:
-	CGO_ENABLED=1 go build -trimpath -o ./bin/01-first-example-server ./examples/01-first-example/server/main.go
-	CGO_ENABLED=1 go build -trimpath -o ./bin/01-first-example-client ./examples/01-first-example/client/main.go
+	CGO_ENABLED=1 go build -trimpath -o ./bin/01-hello-world-server ./examples/01-hello-world/server/main.go
+	CGO_ENABLED=1 go build -trimpath -o ./bin/01-hello-world-client ./examples/01-hello-world/client/main.go
 	CGO_ENABLED=1 go build -trimpath -o ./bin/02-weather-update-server ./examples/02-weather-update/server/main.go
 	CGO_ENABLED=1 go build -trimpath -o ./bin/02-weather-update-client ./examples/02-weather-update/client/main.go
+	CGO_ENABLED=1 go build -trimpath -o ./bin/03-parallel-task-ventilator ./examples/03-parallel-task/ventilator/main.go
+	CGO_ENABLED=1 go build -trimpath -o ./bin/03-parallel-task-worker ./examples/03-parallel-task/worker/main.go
+	CGO_ENABLED=1 go build -trimpath -o ./bin/03-parallel-task-sync ./examples/03-parallel-task/sync/main.go

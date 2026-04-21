@@ -100,8 +100,8 @@ func mainWithError() error {
 }
 
 func main() {
-	log.Println("first-example-client: start.")
-	defer log.Println("first-example-client: stop.")
+	log.Println("hello-world-client: start.")
+	defer log.Println("hello-world-client: stop.")
 
 	zmqMajorVer, zmqMinorVer, zmqPatchVer := zmq.Version()
 

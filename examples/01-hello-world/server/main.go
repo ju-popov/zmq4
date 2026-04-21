@@ -103,8 +103,8 @@ func mainWithError() error {
 }
 
 func main() {
-	log.Println("first-example-server: start.")
-	defer log.Println("first-example-server: stop.")
+	log.Println("hello-world-server: start.")
+	defer log.Println("hello-world-server: stop.")
 
 	zmqMajorVer, zmqMinorVer, zmqPatchVer := zmq.Version()
 
